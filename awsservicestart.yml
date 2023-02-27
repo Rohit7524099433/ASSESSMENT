@@ -1,0 +1,95 @@
+---
+- name: Start AWS Services
+  hosts: localhost
+  gather_facts: false
+  vars:
+    region: us-east-1
+    vpc_name: my-vpc
+    subnet_name: my-subnet
+    sg_name: my-security-group
+    instance_type: t2.micro
+    ami_id: ami-0c94855ba95c71c99
+    key_pair_name: my-key-pair
+    ec2_instance_name: my-ec2-instance
+    rds_instance_name: my-rds-instance
+    rds_instance_class: db.t2.micro
+    rds_engine: mysql
+    rds_engine_version: "8.0.25"
+    rds_username: my-rds-user
+    rds_password: my-rds-password
+    rds_subnet_group: my-rds-subnet-group
+  tasks:
+    - name: Create VPC
+      ec2_vpc_net:
+        name: "{{ vpc_name }}"
+        state: present
+        region: "{{ region }}"
+        cidr_block: 10.0.0.0/16
+      register: vpc
+
+    - name: Create Subnet
+      ec2_vpc_subnet:
+        state: present
+        region: "{{ region }}"
+        vpc_id: "{{ vpc.vpc_id }}"
+        cidr: 10.0.1.0/24
+        az: "{{ region }}a"
+        name: "{{ subnet_name }}"
+      register: subnet
+
+    - name: Create Security Group
+      ec2_group:
+        name: "{{ sg_name }}"
+        description: "My security group"
+        region: "{{ region }}"
+        vpc_id: "{{ vpc.vpc_id }}"
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 80
+            to_port: 80
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 443
+            to_port: 443
+            cidr_ip: 0.0.0.0/0
+      register: sg
+
+    - name: Launch EC2 Instance
+      ec2:
+        instance_type: "{{ instance_type }}"
+        image: "{{ ami_id }}"
+        key_name: "{{ key_pair_name }}"
+        count: 1
+        group_id: "{{ sg.group_id }}"
+        vpc_subnet_id: "{{ subnet.subnet_id }}"
+        assign_public_ip: yes
+        region: "{{ region }}"
+        instance_tags:
+          Name: "{{ ec2_instance_name }}"
+      register: ec2
+
+    - name: Create RDS Subnet Group
+      rds_subnet_group:
+        name: "{{ rds_subnet_group }}"
+        description: "My RDS subnet group"
+        region: "{{ region }}"
+        subnets:
+          - "{{ subnet.subnet_id }}"
+
+    - name: Create RDS Instance
+      rds:
+        region: "{{ region }}"
+        db_instance_identifier: "{{ rds_instance_name }}"
+        db_name: mydb
+        allocated_storage: 20
+        instance_class: "{{ rds_instance_class }}"
+        engine: "{{ rds_engine }}"
+        engine_version: "{{ rds_engine_version }}"
+        master_username: "{{ rds_username }}"
+        master_user_password: "{{ rds_password }}"
+        vpc_security
+

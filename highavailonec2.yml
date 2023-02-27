@@ -1,0 +1,100 @@
+---
+- name: Launch highly available WordPress site on EC2 instances
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    # EC2 instance configuration
+    region: us-west-2
+    ami_id: ami-0c55b159cbfafe1f0 # WordPress AMI ID
+    instance_type: t2.micro
+    key_name: my-key-pair
+    security_group: my-security-group
+    # Load Balancer configuration
+    lb_name: my-load-balancer
+    lb_scheme: internet-facing
+    lb_listener_port: 80
+    # Auto Scaling configuration
+    asg_name: my-auto-scaling-group
+    min_size: 2
+    max_size: 4
+    desired_capacity: 2
+    subnets: [subnet-123456, subnet-789012]
+    # RDS configuration
+    db_instance_identifier: my-db-instance
+    db_instance_class: db.t2.micro
+    db_engine: mysql
+    db_name: wordpress
+    db_username: admin
+    db_password: password
+    db_subnet_group_name: my-db-subnet-group
+    db_security_group_name: my-db-security-group
+  tasks:
+    # Launch EC2 instances
+    - name: Launch EC2 instances
+      ec2:
+        region: "{{ region }}"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ ami_id }}"
+        key_name: "{{ key_name }}"
+        security_group: "{{ security_group }}"
+        count: "{{ desired_capacity }}"
+        wait: true
+        vpc_subnet_id: "{{ subnets }}"
+        user_data: |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd php php-mysql
+          chkconfig httpd on
+          service httpd start
+          echo "<?php phpinfo(); ?>" > /var/www/html/phpinfo.php
+      register: ec2_instances
+
+    # Create RDS instance
+    - name: Create RDS instance
+      rds:
+        region: "{{ region }}"
+        db_instance_identifier: "{{ db_instance_identifier }}"
+        db_instance_class: "{{ db_instance_class }}"
+        engine: "{{ db_engine }}"
+        allocated_storage: 5
+        db_name: "{{ db_name }}"
+        master_username: "{{ db_username }}"
+        master_password: "{{ db_password }}"
+        db_subnet_group_name: "{{ db_subnet_group_name }}"
+        vpc_security_group_ids: ["{{ db_security_group_name }}"]
+        tags:
+          Name: "{{ db_instance_identifier }}"
+      register: rds_instance
+
+    # Create load balancer
+    - name: Create load balancer
+      elb_application_lb:
+        name: "{{ lb_name }}"
+        subnets: "{{ subnets }}"
+        security_groups: ["{{ security_group }}"]
+        scheme: "{{ lb_scheme }}"
+        listeners:
+          - Protocol: HTTP
+            Port: "{{ lb_listener_port }}"
+            DefaultActions:
+              - Type: forward
+                TargetGroupArn: "{{ target_group.arn }}"
+        tags:
+          Name: "{{ lb_name }}"
+      register: lb
+
+    # Create target group
+    - name: Create target group
+      elb_target_group:
+        name: "{{ asg_name }}"
+        protocol: HTTP
+        port: 80
+        vpc_id: "{{ ec2_instances.instances[0].vpc_id }}"
+        health_check_protocol: HTTP
+        health_check_port: 80
+        health_check_path: /index.php
+        health_check_interval_seconds: 30
+        health_check_timeout_seconds: 5
+        healthy_threshold_count: 2
+

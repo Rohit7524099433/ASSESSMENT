@@ -1,0 +1,17 @@
+docker exec -it container_name bash
+apt-get update && apt-get install -y less mysql-client curl
+curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+chmod +x wp-cli.phar
+mv wp-cli.phar /usr/local/bin/wp
+
+
+#Write a bash script that generates random post titles and contents and creates a new post using the WordPress CLI tool.
+
+#!/bin/bash
+wp post create --post_type=post --post_title="$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 10)" --post_content="$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 100)"
+
+#Add a cron job to the container that runs the "wp-post.sh" script every hour. To do this, edit the crontab file using the following command:
+crontab -e
+
+#Add the following line to the file to run the script every hour:
+0 * * * * /bin/bash /wp-post.sh

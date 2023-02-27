@@ -1,0 +1,34 @@
+---
+- name: Create an EC2 instance
+  hosts: localhost
+  gather_facts: False
+
+  vars:
+    instance_type: t2.micro
+    security_group: my-security-group
+    ami_id: ami-0c55b159cbfafe1f0
+    key_name: my-key-pair
+    region: us-west-2
+    subnet_id: subnet-0a123456789abcde1
+    tags:
+      Name: my-ec2-instance
+      Environment: production
+
+  tasks:
+    - name: Create an EC2 instance
+      ec2:
+        instance_type: "{{ instance_type }}"
+        security_groups: "{{ security_group }}"
+        image: "{{ ami_id }}"
+        key_name: "{{ key_name }}"
+        region: "{{ region }}"
+        subnet_id: "{{ subnet_id }}"
+        assign_public_ip: true
+        count: 1
+        wait: true
+        instance_tags: "{{ tags }}"
+      register: ec2
+
+    - name: Display the IP address of the instance
+      debug:
+        var: ec2.instances[0].public_ip_address

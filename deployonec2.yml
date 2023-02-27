@@ -1,0 +1,124 @@
+rohitkumaryadav12.rky
+
+---
+- name: Deploy WordPress on EC2 instance
+  hosts: ec2_instance
+  become: true
+
+  vars:
+    wp_db_name: wordpress
+    wp_db_user: dbuser
+    wp_db_pass: dbpassword
+    wp_admin_user: admin
+    wp_admin_pass: password
+
+  tasks:
+    - name: Install required packages
+      yum:
+        name:
+          - httpd
+          - mariadb-server
+          - php
+          - php-mysql
+          - php-gd
+          - php-xml
+        state: present
+
+    - name: Start and enable services
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      with_items:
+        - httpd
+        - mariadb
+
+    - name: Configure firewall
+      firewalld:
+        service: "{{ item }}"
+        permanent: true
+        state: enabled
+        immediate: true
+      with_items:
+        - http
+        - https
+
+    - name: Create MySQL database and user
+      mysql_db:
+        name: "{{ wp_db_name }}"
+        state: present
+        login_user: root
+        login_password: ""
+
+    - name: Create MySQL user with privileges
+      mysql_user:
+        name: "{{ wp_db_user }}"
+        password: "{{ wp_db_pass }}"
+        priv: "{{ wp_db_name }}.*:ALL"
+        host: localhost
+        state: present
+        login_user: root
+        login_password: ""
+
+    - name: Download and extract WordPress
+      get_url:
+        url: "https://wordpress.org/latest.tar.gz"
+        dest: /tmp/wordpress.tar.gz
+
+    - name: Extract WordPress to web directory
+      unarchive:
+        src: /tmp/wordpress.tar.gz
+        dest: /var/www/html/
+        owner: apache
+        group: apache
+        mode: 'u=rwX,g=rX,o=rX'
+
+    - name: Configure WordPress wp-config.php file
+      copy:
+        src: wp-config.php
+        dest: /var/www/html/wordpress/
+        owner: apache
+        group: apache
+        mode: 'u=rw,g=r,o=r'
+
+    - name: Create uploads directory
+      file:
+        path: /var/www/html/wordpress/wp-content/uploads
+        state: directory
+        owner: apache
+        group: apache
+        mode: 'u=rwx,g=rx,o=rx'
+
+    - name: Set correct SELinux context for uploads directory
+      sefcontext:
+        target: /var/www/html/wordpress/wp-content/uploads
+        setype: httpd_sys_rw_content_t
+        state: present
+
+    - name: Update SELinux policy
+      command: "restorecon -Rv /var/www/html"
+
+    - name: Update Apache config to allow .htaccess files
+      lineinfile:
+        path: /etc/httpd/conf/httpd.conf
+        regexp: "^\\s*AllowOverride"
+        line: "AllowOverride All"
+        state: present
+
+    - name: Create WordPress admin user
+      uri:
+        url: "http://localhost/wordpress/wp-admin/install.php?step=2"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          language: en_US
+          admin_email: admin@example.com
+          blog_public: '0'
+          pass1: "{{ wp_admin_pass }}"
+          pass2: "{{ wp_admin_pass }}"
+          admin_username: "{{ wp_admin_user }}"
+          Submit: Install WordPress
+        return_content: yes
+        status_code: 200
+
+    - name: Remove
